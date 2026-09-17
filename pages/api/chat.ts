@@ -21,9 +21,44 @@ export default async function handler(req: Request): Promise<Response> {
       );
     }
 
-    // Standard-Groq-Modell
-    const selectedModel = 'llama-3.3-70b-versatile';
+    // 1. Dynamisch verfügbare Chat-Modelle von Groq abfragen
+    let selectedModel = 'llama3-8b-8192'; // Fallback
+    try {
+      const modelsRes = await fetch('https://api.groq.com/openai/v1/models', {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
 
+      if (modelsRes.ok) {
+        const modelsData = await modelsRes.json();
+        const availableIds: string[] = modelsData.data?.map((m: any) => m.id) || [];
+        
+        // Filtert Klassifizierungs-, Guard- und Audio-Modelle aus
+        const chatModels = availableIds.filter(id => 
+          !id.includes('guard') && 
+          !id.includes('whisper') && 
+          !id.includes('embed') &&
+          !id.includes('safeguard')
+        );
+
+        const preferredOrder = [
+          'llama-3.3-70b-versatile',
+          'llama-3.1-8b-instant',
+          'llama3-70b-8192',
+          'llama3-8b-8192',
+          'mixtral-8x7b-32768',
+          'gemma2-9b-it'
+        ];
+
+        const match = preferredOrder.find(id => chatModels.includes(id)) || chatModels[0];
+        if (match) {
+          selectedModel = match;
+        }
+      }
+    } catch (e) {
+      console.warn('Modellabfrage fehlgeschlagen, verwende Fallback.');
+    }
+
+    // 2. Anfrage an das gefundene Modell senden
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       headers: {
         'Content-Type': 'application/json',
