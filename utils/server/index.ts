@@ -1,7 +1,7 @@
 import { Message } from '@/types/chat';
 import { OpenAIModel } from '@/types/openai';
 
-import { AZURE_DEPLOYMENT_ID, OPENAI_API_HOST, OPENAI_API_TYPE, OPENAI_API_VERSION, OPENAI_ORGANIZATION } from '../app/const';
+import { DEFAULT_SYSTEM_PROMPT } from '../app/const';
 
 import {
   ParsedEvent,
@@ -30,30 +30,24 @@ export const OpenAIStream = async (
   key: string,
   messages: Message[],
 ) => {
-  let url = `${OPENAI_API_HOST}/v1/chat/completions`;
-  if (OPENAI_API_TYPE === 'azure') {
-    url = `${OPENAI_API_HOST}/openai/deployments/${AZURE_DEPLOYMENT_ID}/chat/completions?api-version=${OPENAI_API_VERSION}`;
-  }
+  // Direkt auf die Groq-Schnittstelle leiten
+  const url = 'https://api.groq.com/openai/v1/chat/completions';
+  
+  // Zwingt die App dazu, deinen Groq-Key aus .env.local zu nutzen (ignoriert den Browser)
+  const apiKey = process.env.OPENAI_API_KEY;
+
   const res = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
-      ...(OPENAI_API_TYPE === 'openai' && {
-        Authorization: `Bearer ${key ? key : process.env.OPENAI_API_KEY}`
-      }),
-      ...(OPENAI_API_TYPE === 'azure' && {
-        'api-key': `${key ? key : process.env.OPENAI_API_KEY}`
-      }),
-      ...((OPENAI_API_TYPE === 'openai' && OPENAI_ORGANIZATION) && {
-        'OpenAI-Organization': OPENAI_ORGANIZATION,
-      }),
+      'Authorization': `Bearer ${apiKey}`,
     },
     method: 'POST',
     body: JSON.stringify({
-      ...(OPENAI_API_TYPE === 'openai' && {model: model.id}),
+      model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',
-          content: systemPrompt,
+          content: systemPrompt || DEFAULT_SYSTEM_PROMPT,
         },
         ...messages,
       ],
@@ -77,7 +71,7 @@ export const OpenAIStream = async (
       );
     } else {
       throw new Error(
-        `OpenAI API returned an error: ${
+        `API returned an error: ${
           decoder.decode(result?.value) || result.statusText
         }`,
       );
@@ -96,9 +90,11 @@ export const OpenAIStream = async (
               controller.close();
               return;
             }
-            const text = json.choices[0].delta.content;
-            const queue = encoder.encode(text);
-            controller.enqueue(queue);
+            const text = json.choices[0].delta?.content;
+            if (text) {
+              const queue = encoder.encode(text);
+              controller.enqueue(queue);
+            }
           } catch (e) {
             controller.error(e);
           }
