@@ -12,93 +12,45 @@ export default async function handler(req: Request): Promise<Response> {
   try {
     const { messages, prompt, temperature } = (await req.json()) as any;
     
-    const rawKey = process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY || '';
-    const apiKey = rawKey.trim().replace(/^["']|["']$/g, '');
+    const apiKey = (process.env.OPENAI_API_KEY || '').trim().replace(/^["']|["']$/g, '');
 
     if (!apiKey) {
-      return new Response('FEHLER: Kein API-Key in .env.local gefunden.', { status: 500 });
+      return new Response(
+        JSON.stringify({ error: 'API Key fehlt in den Vercel Environment Variables.' }), 
+        { status: 400, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
-    // 1. Verfügbare Groq-Modelle abrufen
-    let validChatModels: string[] = [];
-    try {
-      const modelsRes = await fetch('https://api.groq.com/openai/v1/models', {
-        headers: { Authorization: `Bearer ${apiKey}` },
-      });
+    // Standard-Groq-Modell
+    const selectedModel = 'llama-3.3-70b-versatile';
 
-      if (modelsRes.ok) {
-        const modelsData = await modelsRes.json();
-        const allIds: string[] = modelsData.data?.map((m: any) => m.id) || [];
-        
-        // Filtert Guard-, Whisper- und Embed-Modelle aus
-        validChatModels = allIds.filter(id => 
-          !id.includes('guard') && 
-          !id.includes('whisper') && 
-          !id.includes('embed') &&
-          !id.includes('safeguard')
-        );
-      }
-    } catch (e) {
-      console.warn('Modellliste konnte nicht geladen werden.');
-    }
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      method: 'POST',
+      body: JSON.stringify({
+        model: selectedModel,
+        messages: [
+          {
+            role: 'system',
+            content: prompt || 'Du bist ein hilfreicher KI-Assistent. Antworte immer präzise auf Deutsch.',
+          },
+          ...(messages || []),
+        ],
+        temperature: temperature ?? 0.7,
+        stream: true,
+      }),
+    });
 
-    // 2. Bevorzugte Reihenfolge reiner Textmodelle
-    const preferredOrder = [
-      'llama-3.3-70b-versatile',
-      'llama-3.1-8b-instant',
-      'llama-3.2-3b-preview',
-      'llama3-70b-8192',
-      'llama3-8b-8192',
-      'mixtral-8x7b-32768',
-      'gemma2-9b-it'
-    ];
-
-    // Kombiniert gefilterte Live-Modelle mit der Bevorzugungsliste
-    const modelsToTry = [
-      ...preferredOrder.filter(id => validChatModels.includes(id)),
-      ...validChatModels,
-      ...preferredOrder
-    ].filter((value, index, self) => self.indexOf(value) === index);
-
-    let res: Response | null = null;
-    let lastErrorText = '';
-
-    // 3. Erstes funktionierendes Chat-Modell ermitteln
-    for (const model of modelsToTry) {
-      console.log(`Versuche Groq Chat-Modell: ${model}`);
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        method: 'POST',
-        body: JSON.stringify({
-          model: model,
-          messages: [
-            {
-              role: 'system',
-              content: prompt || 'Du bist ein hilfreicher KI-Assistent. Antworte immer präzise auf Deutsch.',
-            },
-            ...(messages || []),
-          ],
-          temperature: temperature ?? 0.7,
-          stream: true,
-        }),
-      });
-
-      if (response.ok) {
-        res = response;
-        console.log(`✅ Erfolgreich verbunden mit Chat-Modell: ${model}`);
-        break;
-      } else {
-        lastErrorText = await response.text();
-        console.warn(`Modell ${model} übersprungen:`, lastErrorText);
-      }
-    }
-
-    if (!res) {
-      console.error('❌ Keines der Chat-Modelle konnte geladen werden:', lastErrorText);
-      return new Response(`Groq Fehler: ${lastErrorText}`, { status: 500 });
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error('❌ Groq API Fehler:', errorText);
+      return new Response(
+        JSON.stringify({ error: `Groq Fehler (${res.status}): ${errorText}` }), 
+        { status: res.status, headers: { 'Content-Type': 'application/json' } }
+      );
     }
 
     const encoder = new TextEncoder();
@@ -106,7 +58,7 @@ export default async function handler(req: Request): Promise<Response> {
     const body = res.body;
 
     if (!body) {
-      return new Response('Kein Stream-Body empfangen.', { status: 500 });
+      return new Response('Kein Stream von Groq empfangen.', { status: 500 });
     }
 
     const stream = new ReadableStream({
@@ -156,6 +108,9 @@ export default async function handler(req: Request): Promise<Response> {
     });
   } catch (error: any) {
     console.error('❌ Server Fehler:', error);
-    return new Response(`Internal Server Error: ${error?.message || error}`, { status: 500 });
+    return new Response(
+      JSON.stringify({ error: error?.message || 'Internal Server Error' }), 
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    );
   }
 }
