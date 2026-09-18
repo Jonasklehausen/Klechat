@@ -1,6 +1,6 @@
 export const DEFAULT_SYSTEM_PROMPT =
   process.env.NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT ||
-  "You are ChatGPT, a large language model trained by OpenAI. Follow the user's instructions carefully. Respond using markdown.";
+  "Bitte antworte immer auf deutsch und halte dich relativ kurz";
 
 export const OPENAI_DEFAULT_MODEL =
   process.env.DEFAULT_MODEL || 'llama-3.3-70b-versatile';
