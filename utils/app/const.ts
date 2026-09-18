@@ -1,6 +1,6 @@
 export const DEFAULT_SYSTEM_PROMPT =
   process.env.NEXT_PUBLIC_DEFAULT_SYSTEM_PROMPT ||
-  "Bitte antworte immer auf deutsch und halte dich relativ kurz";
+  "Bitte antworte immer auf deutsch und halte dich relativ kurz, bitte antworte nie in Arabisch";
 
 export const OPENAI_DEFAULT_MODEL =
   process.env.DEFAULT_MODEL || 'llama-3.3-70b-versatile';
